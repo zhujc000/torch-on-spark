@@ -12,6 +12,29 @@ SCHEDULER_FILE_NAME = "scheduler.pt"
 MODEL_FILE_PATH = "model.pth"
 
 
+def default_collect_f(x):
+    if len(x) <= 0:
+        return {}
+
+    if not isinstance(x[0], dict):
+        raise TypeError("default data type must be dict")
+
+    keys = [i for i in x[0].keys()]
+    for key in keys:
+        if not isinstance(x[0][key], list):
+            raise TypeError("value type must be list")
+
+    res = x[0]
+    for i in range(1, len(x)):
+        for key in keys:
+            res[key] = res[key] + x[i][key]
+
+    for key in keys:
+        res[key] = torch.Tensor(res[key])
+
+    return res
+
+
 def get_linear_schedule_with_warmup(optimizer, num_of_warmup_steps, num_of_train_steps, last_epoch=-1):
 
     def lr_lambda(current_step):
@@ -25,12 +48,12 @@ def get_linear_schedule_with_warmup(optimizer, num_of_warmup_steps, num_of_train
 
 class TrainingArgument(object):
     def __init__(self,
-                 device: torch.device,
                  num_train_epoch: int,
                  train_batch_size: int,
                  learning_rate: float,
                  warmup_steps: int = 0,
                  weight_decay: float = 0.0,
+                 device: torch.device = torch.device("cpu"),
                  out_put_dir: str = ".",
                  arg_mapping: Dict[str, object] = None,
                  rank: int = -1,
@@ -58,6 +81,9 @@ class TrainingArgument(object):
         self.do_train = do_train
         self.do_eval = do_eval
         self.eval_batch_size = eval_batch_size
+
+        if self.rank != -1 and self.local_rank != -1 and self.backend == 'nccl':
+            self.device = torch.device("cuda:" + str(self.local_rank))
 
         str_map = {"device": self.device,
                    "num_train_epoch": self.num_train_epoch,
@@ -87,7 +113,7 @@ class Trainer(object):
                  training_arg: TrainingArgument,
                  train_dataset: Optional[Dataset],
                  eval_dataset: Optional[Dataset] = None,
-                 collect_fn: Callable[[List[Any]], Any] = None,
+                 collect_fn: Callable[[List[Any]], Any] = default_collect_f,
                  optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = None):
         self.training_arg = training_arg
         self.model = model.to(self.training_arg.device)
@@ -227,7 +253,7 @@ class Trainer(object):
                 step_loss.backward()
                 optimizer.step()
 
-                self.current_loss = float(step_loss.data)
+                self.current_loss = float(step_loss.cpu().data)
                 epoch_loss_sum = epoch_loss_sum + step_loss.data
 
             epoch_loss = epoch_loss_sum / self.total_step_per_epoch
