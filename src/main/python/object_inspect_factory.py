@@ -97,11 +97,16 @@ class ObjectInspectFactory(object):
                                 self.eval_dataset_class_name,
                                 self.eval_dataset_init)
 
-    def build_optimizer(self) -> Dataset:
+    def build_optimizer(self) -> torch.optim.Optimizer:
         return self.__class_obj(self.optimizer_py_name,
                                 self.optimizer_class_name,
                                 self.optimizer_init)
 
-    def build_scheduler(self) -> Dataset:
+    def build_scheduler(self):
+        return self.__class_obj(self.scheduler_py_name,
+                                self.scheduler_class_name,
+                                self.scheduler_init)
+
+    def build_collect_fn(self):
         return self.__func_obj(self.collect_fn_py_name,
                                self.collect_fn_name)
